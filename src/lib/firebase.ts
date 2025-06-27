@@ -2,18 +2,29 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getAnalytics } from 'firebase/analytics';
 
 const firebaseConfig = {
-  // Users will need to add their Firebase config here
-  apiKey: "your-api-key",
-  authDomain: "your-project.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "your-app-id"
+  apiKey: "AIzaSyCM4v3yM__hNgbDJAqR2qC1CdtB-rmS8C4",
+  authDomain: "killer-assistant.firebaseapp.com",
+  projectId: "killer-assistant",
+  storageBucket: "killer-assistant.firebasestorage.app",
+  messagingSenderId: "830551054075",
+  appId: "1:830551054075:web:e64210ac059fe160ff425e",
+  measurementId: "G-HZXDEK55JT"
 };
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
+
+// Initialize Firebase services
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// Initialize Analytics (only in browser environment)
+let analytics;
+if (typeof window !== 'undefined') {
+  analytics = getAnalytics(app);
+}
+export { analytics };
