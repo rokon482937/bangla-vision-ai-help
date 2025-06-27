@@ -1,7 +1,8 @@
+
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { Mic, ScreenShare, CreditCard } from 'lucide-react';
@@ -37,7 +38,8 @@ export const Dashboard = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const recognitionRef = useRef<Recognition | null>(null);
 
-  const canUseTokens = userData && (userData.tokens - userData.usedTokens > 0 || userData.subscription === 'premium');
+  // Free users have unlimited usage, paid users have token limits
+  const canUseTokens = userData && (userData.subscription === 'free' || userData.tokens - userData.usedTokens > 0 || userData.subscription === 'premium');
 
   const getSubscriptionColor = (subscription: string) => {
     switch (subscription) {
@@ -47,11 +49,18 @@ export const Dashboard = () => {
     }
   };
 
+  const getTokenDisplay = () => {
+    if (!userData) return '0';
+    if (userData.subscription === 'premium') return '∞';
+    if (userData.subscription === 'free') return '∞'; // Free users have unlimited usage
+    return `${userData.tokens - userData.usedTokens}`;
+  };
+
   const startScreenShare = async () => {
     if (!canUseTokens) {
       toast({ 
-        title: "টোকেন শেষ!", 
-        description: "আরো টোকেন পেতে সাবস্ক্রিপশন আপগ্রেড করুন",
+        title: "সেবা অনুপলব্ধ!", 
+        description: "দয়া করে সাবস্ক্রিপশন আপগ্রেড করুন",
         variant: "destructive" 
       });
       return;
@@ -71,8 +80,8 @@ export const Dashboard = () => {
       setIsScreenSharing(true);
       setCurrentStatus('✅ স্ক্রিন শেয়ার চালু - এখন কথা বলুন');
 
-      // Use 1 token for screen sharing
-      if (userData?.subscription !== 'premium') {
+      // Update tokens for paid users only
+      if (userData?.subscription !== 'free' && userData?.subscription !== 'premium') {
         await updateTokens(1);
         toast({ 
           title: "টোকেন ব্যবহৃত!", 
@@ -229,7 +238,7 @@ export const Dashboard = () => {
                   {userData?.subscription?.toUpperCase()}
                 </Badge>
                 <span className="text-white text-sm">
-                  🔢 {userData?.subscription === 'premium' ? '∞' : `${(userData?.tokens || 0) - (userData?.usedTokens || 0)}`} টোকেন
+                  🔢 {getTokenDisplay()} টোকেন
                 </span>
               </div>
             </CardContent>
@@ -327,71 +336,6 @@ export const Dashboard = () => {
             <p className="text-white text-center text-lg">{currentStatus}</p>
           </CardContent>
         </Card>
-
-        {/* Token Warning for Low Balance */}
-        {canUseTokens && userData && (userData.tokens - userData.usedTokens <= 2) && userData.subscription !== 'premium' && (
-          <div className="relative z-10 flex justify-center px-6 mb-8">
-            <Card className="max-w-md bg-amber-900/40 border-amber-500/50 backdrop-blur-xl">
-              <CardContent className="p-4 text-center">
-                <h3 className="text-amber-400 font-semibold mb-2">⚠️ টোকেন কম!</h3>
-                <p className="text-amber-200 text-sm mb-3">
-                  আপনার মাত্র {(userData.tokens || 0) - (userData.usedTokens || 0)} টি টোকেন বাকি আছে
-                </p>
-                <Button
-                  onClick={() => navigate('/subscription')}
-                  className="bg-amber-600 hover:bg-amber-700 text-white text-sm"
-                >
-                  আরো টোকেন কিনুন
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* Updated Subscription Plans Section */}
-        {!canUseTokens && (
-          <div className="relative z-10 max-w-4xl mx-auto px-6 mb-8">
-            <Card className="bg-black/40 border-red-500/30 backdrop-blur-xl">
-              <CardHeader>
-                <CardTitle className="text-white text-center">আপনার টোকেন শেষ!</CardTitle>
-                <CardDescription className="text-gray-300 text-center">
-                  আরো টোকেন পেতে প্ল্যান আপগ্রেড করুন
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="text-center p-4 border border-gray-500 rounded-lg">
-                    <h3 className="text-white font-semibold">Free</h3>
-                    <p className="text-gray-300">৫ টোকেন</p>
-                    <p className="text-sm text-gray-400">বর্তমানে সক্রিয়</p>
-                  </div>
-                  <div className="text-center p-4 border border-blue-500 rounded-lg">
-                    <h3 className="text-white font-semibold">Pro</h3>
-                    <p className="text-gray-300">১০০ টোকেন/মাস</p>
-                    <p className="text-blue-400 font-semibold">৳৪৯৯/মাস</p>
-                    <Button 
-                      onClick={() => navigate('/subscription')}
-                      className="mt-2 bg-blue-600 hover:bg-blue-700"
-                    >
-                      আপগ্রেড করুন
-                    </Button>
-                  </div>
-                  <div className="text-center p-4 border border-purple-500 rounded-lg">
-                    <h3 className="text-white font-semibold">Premium</h3>
-                    <p className="text-gray-300">আনলিমিটেড</p>
-                    <p className="text-purple-400 font-semibold">৳৯৯৯/মাস</p>
-                    <Button 
-                      onClick={() => navigate('/subscription')}
-                      className="mt-2 bg-purple-600 hover:bg-purple-700"
-                    >
-                      আপগ্রেড করুন
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
       </div>
 
       {/* Footer */}

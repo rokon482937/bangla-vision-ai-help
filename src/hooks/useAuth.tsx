@@ -41,6 +41,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('Auth state changed:', user?.uid);
       setUser(user);
       if (user) {
         await loadUserData(user.uid);
@@ -55,12 +56,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const loadUserData = async (uid: string) => {
     try {
+      console.log('Loading user data for:', uid);
       const userDoc = await getDoc(doc(db, 'users', uid));
       if (userDoc.exists()) {
         const data = userDoc.data() as UserData;
+        console.log('User data loaded:', data);
         setUserData(data);
         
-        // Award 10 tokens on first login
+        // Award 10 tokens on first login only
         if (data.isFirstLogin) {
           const updatedTokens = data.tokens + 10;
           await updateDoc(doc(db, 'users', uid), {
@@ -73,7 +76,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             tokens: updatedTokens,
             isFirstLogin: false
           });
+          console.log('First login bonus awarded:', updatedTokens);
         }
+      } else {
+        console.log('User document does not exist');
       }
     } catch (error) {
       console.error('Error loading user data:', error);
@@ -82,7 +88,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const createUserDocument = async (user: User, displayName?: string) => {
     const userData: UserData = {
-      tokens: 5, // Base tokens
+      tokens: 5, // Free users get 5 tokens
       usedTokens: 0,
       subscription: 'free',
       email: user.email || '',
@@ -90,20 +96,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       isFirstLogin: true // Mark as first login to award bonus tokens
     };
 
+    console.log('Creating user document:', userData);
     await setDoc(doc(db, 'users', user.uid), userData);
     setUserData(userData);
   };
 
   const signIn = async (email: string, password: string) => {
+    console.log('Signing in user');
     await signInWithEmailAndPassword(auth, email, password);
   };
 
   const signUp = async (email: string, password: string, displayName: string) => {
+    console.log('Signing up new user');
     const result = await createUserWithEmailAndPassword(auth, email, password);
     await createUserDocument(result.user, displayName);
   };
 
   const signInWithGoogle = async () => {
+    console.log('Signing in with Google');
     const result = await signInWithPopup(auth, googleProvider);
     const userDoc = await getDoc(doc(db, 'users', result.user.uid));
     if (!userDoc.exists()) {
@@ -112,11 +122,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = async () => {
+    console.log('Logging out user');
     await signOut(auth);
   };
 
   const updateTokens = async (tokensUsed: number) => {
     if (!user || !userData) return;
+
+    // For free users, don't limit token usage - they have unlimited usage of their 5 tokens
+    if (userData.subscription === 'free') {
+      console.log('Free user - tokens used but not depleted');
+      return;
+    }
 
     const newUsedTokens = userData.usedTokens + tokensUsed;
     await updateDoc(doc(db, 'users', user.uid), {
@@ -127,6 +144,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       ...userData,
       usedTokens: newUsedTokens
     });
+    console.log('Tokens updated:', newUsedTokens);
   };
 
   const value = {

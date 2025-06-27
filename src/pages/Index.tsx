@@ -6,6 +6,8 @@ import { Dashboard } from '@/components/Dashboard';
 const Index = () => {
   const { user, loading } = useAuth();
 
+  console.log('Index page - User:', user?.uid, 'Loading:', loading);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black flex items-center justify-center">
