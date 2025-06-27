@@ -1,11 +1,11 @@
-
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
-import { Mic, ScreenShare } from 'lucide-react';
+import { Mic, ScreenShare, CreditCard } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface Recognition {
   continuous: boolean;
@@ -28,6 +28,7 @@ declare global {
 
 export const Dashboard = () => {
   const { user, userData, logout, updateTokens } = useAuth();
+  const navigate = useNavigate();
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [currentStatus, setCurrentStatus] = useState('স্ক্রিন শেয়ার করে শুরু করুন');
@@ -50,7 +51,7 @@ export const Dashboard = () => {
     if (!canUseTokens) {
       toast({ 
         title: "টোকেন শেষ!", 
-        description: "আরো টোকেন কিনুন বা পরে চেষ্টা করুন",
+        description: "আরো টোকেন পেতে সাবস্ক্রিপশন আপগ্রেড করুন",
         variant: "destructive" 
       });
       return;
@@ -73,6 +74,10 @@ export const Dashboard = () => {
       // Use 1 token for screen sharing
       if (userData?.subscription !== 'premium') {
         await updateTokens(1);
+        toast({ 
+          title: "টোকেন ব্যবহৃত!", 
+          description: `১টি টোকেন ব্যবহার হয়েছে। বাকি: ${(userData?.tokens || 0) - (userData?.usedTokens || 0) - 1}`,
+        });
       }
 
       // Start voice recognition
@@ -230,6 +235,14 @@ export const Dashboard = () => {
             </CardContent>
           </Card>
 
+          <Button
+            onClick={() => navigate('/subscription')}
+            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white flex items-center gap-2"
+          >
+            <CreditCard className="w-4 h-4" />
+            সাবস্ক্রিপশন
+          </Button>
+
           <Button 
             onClick={logout} 
             variant="outline" 
@@ -315,39 +328,69 @@ export const Dashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Subscription Plans */}
+        {/* Token Warning for Low Balance */}
+        {canUseTokens && userData && (userData.tokens - userData.usedTokens <= 2) && userData.subscription !== 'premium' && (
+          <div className="relative z-10 flex justify-center px-6 mb-8">
+            <Card className="max-w-md bg-amber-900/40 border-amber-500/50 backdrop-blur-xl">
+              <CardContent className="p-4 text-center">
+                <h3 className="text-amber-400 font-semibold mb-2">⚠️ টোকেন কম!</h3>
+                <p className="text-amber-200 text-sm mb-3">
+                  আপনার মাত্র {(userData.tokens || 0) - (userData.usedTokens || 0)} টি টোকেন বাকি আছে
+                </p>
+                <Button
+                  onClick={() => navigate('/subscription')}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-sm"
+                >
+                  আরো টোকেন কিনুন
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Updated Subscription Plans Section */}
         {!canUseTokens && (
-          <Card className="mt-8 max-w-2xl bg-black/40 border-red-500/30 backdrop-blur-xl">
-            <CardHeader>
-              <CardTitle className="text-white text-center">আপনার টোকেন শেষ!</CardTitle>
-              <CardDescription className="text-gray-300 text-center">
-                আরো টোকেন পেতে প্ল্যান আপগ্রেড করুন
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="text-center p-4 border border-gray-500 rounded-lg">
-                  <h3 className="text-white font-semibold">Free</h3>
-                  <p className="text-gray-300">৫ টোকেন</p>
-                  <p className="text-sm text-gray-400">বর্তমানে সক্রিয়</p>
+          <div className="relative z-10 max-w-4xl mx-auto px-6 mb-8">
+            <Card className="bg-black/40 border-red-500/30 backdrop-blur-xl">
+              <CardHeader>
+                <CardTitle className="text-white text-center">আপনার টোকেন শেষ!</CardTitle>
+                <CardDescription className="text-gray-300 text-center">
+                  আরো টোকেন পেতে প্ল্যান আপগ্রেড করুন
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="text-center p-4 border border-gray-500 rounded-lg">
+                    <h3 className="text-white font-semibold">Free</h3>
+                    <p className="text-gray-300">৫ টোকেন</p>
+                    <p className="text-sm text-gray-400">বর্তমানে সক্রিয়</p>
+                  </div>
+                  <div className="text-center p-4 border border-blue-500 rounded-lg">
+                    <h3 className="text-white font-semibold">Pro</h3>
+                    <p className="text-gray-300">১০০ টোকেন/মাস</p>
+                    <p className="text-blue-400 font-semibold">৳৪৯৯/মাস</p>
+                    <Button 
+                      onClick={() => navigate('/subscription')}
+                      className="mt-2 bg-blue-600 hover:bg-blue-700"
+                    >
+                      আপগ্রেড করুন
+                    </Button>
+                  </div>
+                  <div className="text-center p-4 border border-purple-500 rounded-lg">
+                    <h3 className="text-white font-semibold">Premium</h3>
+                    <p className="text-gray-300">আনলিমিটেড</p>
+                    <p className="text-purple-400 font-semibold">৳৯৯৯/মাস</p>
+                    <Button 
+                      onClick={() => navigate('/subscription')}
+                      className="mt-2 bg-purple-600 hover:bg-purple-700"
+                    >
+                      আপগ্রেড করুন
+                    </Button>
+                  </div>
                 </div>
-                <div className="text-center p-4 border border-blue-500 rounded-lg">
-                  <h3 className="text-white font-semibold">Pro</h3>
-                  <p className="text-gray-300">১০০ টোকেন/মাস</p>
-                  <Button className="mt-2 bg-blue-600 hover:bg-blue-700">
-                    আপগ্রেড করুন
-                  </Button>
-                </div>
-                <div className="text-center p-4 border border-purple-500 rounded-lg">
-                  <h3 className="text-white font-semibold">Premium</h3>
-                  <p className="text-gray-300">আনলিমিটেড</p>
-                  <Button className="mt-2 bg-purple-600 hover:bg-purple-700">
-                    আপগ্রেড করুন
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         )}
       </div>
 

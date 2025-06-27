@@ -10,6 +10,7 @@ interface UserData {
   subscription: 'free' | 'pro' | 'premium';
   email: string;
   displayName: string;
+  isFirstLogin?: boolean;
 }
 
 interface AuthContextType {
@@ -56,7 +57,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       const userDoc = await getDoc(doc(db, 'users', uid));
       if (userDoc.exists()) {
-        setUserData(userDoc.data() as UserData);
+        const data = userDoc.data() as UserData;
+        setUserData(data);
+        
+        // Award 10 tokens on first login
+        if (data.isFirstLogin) {
+          const updatedTokens = data.tokens + 10;
+          await updateDoc(doc(db, 'users', uid), {
+            tokens: updatedTokens,
+            isFirstLogin: false
+          });
+          
+          setUserData({
+            ...data,
+            tokens: updatedTokens,
+            isFirstLogin: false
+          });
+        }
       }
     } catch (error) {
       console.error('Error loading user data:', error);
@@ -65,11 +82,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const createUserDocument = async (user: User, displayName?: string) => {
     const userData: UserData = {
-      tokens: 5, // Free plan starts with 5 tokens
+      tokens: 5, // Base tokens
       usedTokens: 0,
       subscription: 'free',
       email: user.email || '',
-      displayName: displayName || user.displayName || 'User'
+      displayName: displayName || user.displayName || 'User',
+      isFirstLogin: true // Mark as first login to award bonus tokens
     };
 
     await setDoc(doc(db, 'users', user.uid), userData);
