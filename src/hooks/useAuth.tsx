@@ -1,0 +1,126 @@
+
+import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { User, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { auth, googleProvider, db } from '@/lib/firebase';
+
+interface UserData {
+  tokens: number;
+  usedTokens: number;
+  subscription: 'free' | 'pro' | 'premium';
+  email: string;
+  displayName: string;
+}
+
+interface AuthContextType {
+  user: User | null;
+  userData: UserData | null;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, displayName: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  logout: () => Promise<void>;
+  updateTokens: (tokensUsed: number) => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setUser(user);
+      if (user) {
+        await loadUserData(user.uid);
+      } else {
+        setUserData(null);
+      }
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const loadUserData = async (uid: string) => {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      if (userDoc.exists()) {
+        setUserData(userDoc.data() as UserData);
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
+  };
+
+  const createUserDocument = async (user: User, displayName?: string) => {
+    const userData: UserData = {
+      tokens: 5, // Free plan starts with 5 tokens
+      usedTokens: 0,
+      subscription: 'free',
+      email: user.email || '',
+      displayName: displayName || user.displayName || 'User'
+    };
+
+    await setDoc(doc(db, 'users', user.uid), userData);
+    setUserData(userData);
+  };
+
+  const signIn = async (email: string, password: string) => {
+    await signInWithEmailAndPassword(auth, email, password);
+  };
+
+  const signUp = async (email: string, password: string, displayName: string) => {
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    await createUserDocument(result.user, displayName);
+  };
+
+  const signInWithGoogle = async () => {
+    const result = await signInWithPopup(auth, googleProvider);
+    const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+    if (!userDoc.exists()) {
+      await createUserDocument(result.user);
+    }
+  };
+
+  const logout = async () => {
+    await signOut(auth);
+  };
+
+  const updateTokens = async (tokensUsed: number) => {
+    if (!user || !userData) return;
+
+    const newUsedTokens = userData.usedTokens + tokensUsed;
+    await updateDoc(doc(db, 'users', user.uid), {
+      usedTokens: newUsedTokens
+    });
+
+    setUserData({
+      ...userData,
+      usedTokens: newUsedTokens
+    });
+  };
+
+  const value = {
+    user,
+    userData,
+    loading,
+    signIn,
+    signUp,
+    signInWithGoogle,
+    logout,
+    updateTokens
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
