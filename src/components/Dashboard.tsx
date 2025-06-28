@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -51,7 +50,6 @@ export const Dashboard = () => {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ 
         video: { 
-          mediaSource: 'screen',
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         },
