@@ -8,25 +8,6 @@ import { toast } from '@/hooks/use-toast';
 import { Mic, ScreenShare, CreditCard } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-interface Recognition {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start: () => void;
-  stop: () => void;
-  onstart: () => void;
-  onresult: (event: any) => void;
-  onerror: (event: any) => void;
-  onend: () => void;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition: any;
-    webkitSpeechRecognition: any;
-  }
-}
-
 export const Dashboard = () => {
   const { user, userData, logout, updateTokens } = useAuth();
   const navigate = useNavigate();
@@ -34,9 +15,10 @@ export const Dashboard = () => {
   const [isListening, setIsListening] = useState(false);
   const [currentStatus, setCurrentStatus] = useState('স্ক্রিন শেয়ার করুন এবং বাংলায় কথা বলুন');
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   
   const videoRef = useRef<HTMLVideoElement>(null);
-  const recognitionRef = useRef<Recognition | null>(null);
 
   // Free users have unlimited usage, paid users have token limits
   const canUseTokens = userData && (userData.subscription === 'free' || userData.tokens - userData.usedTokens > 0 || userData.subscription === 'premium');
@@ -68,13 +50,22 @@ export const Dashboard = () => {
 
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ 
-        video: true,
+        video: { 
+          mediaSource: 'screen',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
         audio: true 
       });
       
       setMediaStream(stream);
+      
+      // Ensure video element is properly set up
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().catch(console.error);
+        };
       }
 
       setIsScreenSharing(true);
@@ -89,8 +80,8 @@ export const Dashboard = () => {
         });
       }
 
-      // Start voice recognition
-      startVoiceRecognition();
+      // Start voice recording with Whisper
+      startWhisperRecording();
 
       // Handle stream end
       stream.getVideoTracks()[0].onended = () => {
@@ -118,92 +109,146 @@ export const Dashboard = () => {
       videoRef.current.srcObject = null;
     }
 
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
     }
 
     setIsScreenSharing(false);
     setIsListening(false);
     setCurrentStatus('স্ক্রিন শেয়ার বন্ধ হয়েছে');
+    setAudioChunks([]);
     
     toast({ title: "স্ক্রিন শেয়ার বন্ধ" });
   };
 
-  const startVoiceRecognition = () => {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const recognition = new SpeechRecognition();
+  const startWhisperRecording = async () => {
+    try {
+      const audioStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true
+        } 
+      });
+      
+      const recorder = new MediaRecorder(audioStream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+      
+      const chunks: Blob[] = [];
+      
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      };
 
-      recognition.continuous = true;
-      recognition.interimResults = false;
-      recognition.lang = 'bn-BD';
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        await processAudioWithWhisper(audioBlob);
+        chunks.length = 0;
+        
+        // Restart recording if still screen sharing
+        if (isScreenSharing) {
+          setTimeout(() => startWhisperRecording(), 1000);
+        }
+      };
 
-      recognition.onstart = () => {
+      recorder.onstart = () => {
         setIsListening(true);
         setCurrentStatus('🎤 শুনছি... আপনার সমস্যা বলুন');
       };
 
-      recognition.onresult = async (event) => {
-        const transcript = event.results[event.results.length - 1][0].transcript;
-        setCurrentStatus(`আপনি বললেন: ${transcript}`);
-
-        // Call AI API
-        try {
-          const response = await fetch('/api/ask', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              prompt: transcript,
-              userId: user?.uid 
-            }),
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            const reply = data.reply;
-            
-            setCurrentStatus(`AI সমাধান: ${reply}`);
-
-            // Bengali text-to-speech
-            const utterance = new SpeechSynthesisUtterance(reply);
-            const isBangla = /[\u0980-\u09FF]/.test(reply);
-            utterance.lang = isBangla ? 'bn-BD' : 'en-US';
-            utterance.rate = 0.8;
-            speechSynthesis.speak(utterance);
-
-            // Update tokens for paid users
-            if (userData?.subscription !== 'free' && userData?.subscription !== 'premium') {
-              await updateTokens(10);
-            }
-          } else {
-            setCurrentStatus('AI সার্ভিস অনুপলব্ধ - ব্যাকএন্ড সেটআপ করুন');
-          }
-        } catch (error) {
-          setCurrentStatus('AI সার্ভিস সংযোগ ব্যর্থ');
-          console.error('AI API Error:', error);
+      setMediaRecorder(recorder);
+      recorder.start();
+      
+      // Record in 5-second chunks for better real-time processing
+      setTimeout(() => {
+        if (recorder.state === 'recording') {
+          recorder.stop();
         }
-      };
+      }, 5000);
 
-      recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        setCurrentStatus('ভয়েস রিকগনিশন সমস্যা');
-      };
-
-      recognition.onend = () => {
-        if (isScreenSharing) {
-          setTimeout(() => recognition.start(), 1000);
-        }
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
-    } else {
+    } catch (error) {
+      console.error('Audio recording error:', error);
       toast({ 
-        title: "ভয়েস সাপোর্ট নেই", 
-        description: "আধুনিক ব্রাউজার ব্যবহার করুন",
+        title: "অডিও রেকর্ডিং ব্যর্থ", 
+        description: "মাইক্রোফোন অনুমতি দিন",
         variant: "destructive" 
       });
+    }
+  };
+
+  const processAudioWithWhisper = async (audioBlob: Blob) => {
+    try {
+      // Convert audio to the format expected by Whisper
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'audio.webm');
+      formData.append('userId', user?.uid || '');
+
+      setCurrentStatus('🤖 AI প্রসেসিং...');
+
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const transcript = data.transcript;
+        
+        if (transcript && transcript.trim()) {
+          setCurrentStatus(`আপনি বললেন: ${transcript}`);
+          
+          // Call AI for response
+          await getAIResponse(transcript);
+        } else {
+          setCurrentStatus('🎤 কোন কথা শোনা যায়নি - আবার বলুন');
+        }
+      } else {
+        setCurrentStatus('ভয়েস প্রসেসিং সমস্যা - ব্যাকএন্ড সেটআপ করুন');
+      }
+    } catch (error) {
+      console.error('Whisper processing error:', error);
+      setCurrentStatus('ভয়েস সার্ভিস সংযোগ ব্যর্থ');
+    }
+  };
+
+  const getAIResponse = async (transcript: string) => {
+    try {
+      const response = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          prompt: transcript,
+          userId: user?.uid 
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const reply = data.reply;
+        
+        setCurrentStatus(`AI সমাধান: ${reply}`);
+
+        // Bengali text-to-speech
+        const utterance = new SpeechSynthesisUtterance(reply);
+        const isBangla = /[\u0980-\u09FF]/.test(reply);
+        utterance.lang = isBangla ? 'bn-BD' : 'en-US';
+        utterance.rate = 0.8;
+        speechSynthesis.speak(utterance);
+
+        // Update tokens for paid users
+        if (userData?.subscription !== 'free' && userData?.subscription !== 'premium') {
+          await updateTokens(10);
+        }
+      } else {
+        setCurrentStatus('AI সার্ভিস অনুপলব্ধ - ব্যাকএন্ড সেটআপ করুন');
+      }
+    } catch (error) {
+      setCurrentStatus('AI সার্ভিস সংযোগ ব্যর্থ');
+      console.error('AI API Error:', error);
     }
   };
 
@@ -212,11 +257,11 @@ export const Dashboard = () => {
       if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
       }
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
       }
     };
-  }, [mediaStream]);
+  }, [mediaStream, mediaRecorder]);
 
   return (
     <div className="min-h-screen bg-black relative overflow-x-hidden">
@@ -309,9 +354,10 @@ export const Dashboard = () => {
                 <video
                   ref={videoRef}
                   autoPlay
+                  playsInline
                   muted
                   className="w-full max-w-4xl rounded-lg border-2 border-red-500/50"
-                  style={{ aspectRatio: '16/9' }}
+                  style={{ aspectRatio: '16/9', minHeight: '300px' }}
                 />
               </div>
             </CardContent>
@@ -351,14 +397,14 @@ export const Dashboard = () => {
             }`}>
               <Mic className="w-6 h-6" />
             </div>
-            <span className="text-sm text-gray-300">Voice Assistant</span>
+            <span className="text-sm text-gray-300">Whisper AI</span>
           </div>
         </div>
 
         {/* Instructions */}
         <div className="max-w-2xl mb-12">
           <p className="text-white/80 text-lg text-center leading-relaxed">
-            আপনার স্ক্রিন শেয়ার করুন এবং বাংলায় কথা বলুন। AI আপনার সমস্যার সমাধান দেবে।
+            আপনার স্ক্রিন শেয়ার করুন এবং বাংলায় কথা বলুন। Whisper AI আপনার কথা বুঝবে এবং GPT-4 সমাধান দেবে।
           </p>
         </div>
 
@@ -372,7 +418,7 @@ export const Dashboard = () => {
 
       {/* Footer */}
       <div className="relative z-10 text-center p-6 text-gray-400">
-        <p>Powered by Killer Assistant AI • Bengali Voice Recognition • Real-time Screen Analysis</p>
+        <p>Powered by Killer Assistant AI • OpenAI Whisper • GPT-4 • Real-time Screen Analysis</p>
       </div>
     </div>
   );

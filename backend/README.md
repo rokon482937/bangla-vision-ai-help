@@ -6,11 +6,13 @@ This is the backend API server for the Killer Assistant AI Screen Share & Voice 
 ## Features
 
 - OpenAI GPT-4 integration for AI responses
+- OpenAI Whisper integration for voice transcription
 - Firebase Firestore for user data and token management
-- Bengali language support
+- Bengali and English language support
 - Token-based usage tracking
 - Secure user authentication
 - Real-time AI chat functionality
+- Audio file processing and transcription
 
 ## Setup Instructions
 
@@ -29,7 +31,7 @@ cp .env.example .env
 ```
 
 2. Fill in your environment variables:
-   - `OPENAI_API_KEY`: Your OpenAI API key
+   - `OPENAI_API_KEY`: Your OpenAI API key (must have access to GPT-4 and Whisper)
    - `PORT`: Server port (default: 3000)
 
 ### 3. Firebase Admin Setup
@@ -39,7 +41,11 @@ cp .env.example .env
 3. Click "Generate new private key"
 4. Save the downloaded JSON file as `serviceAccountKey.json` in the backend folder
 
-### 4. Start the Server
+### 4. Create Uploads Directory
+
+The server will automatically create an `uploads/` directory for temporary audio files.
+
+### 5. Start the Server
 
 Development mode (with auto-restart):
 ```bash
@@ -52,6 +58,19 @@ npm start
 ```
 
 ## API Endpoints
+
+### POST /api/transcribe
+- **Description**: Transcribe audio using OpenAI Whisper
+- **Content-Type**: multipart/form-data
+- **Body**: 
+  - `audio`: Audio file (WebM, MP3, WAV, etc.)
+  - `userId`: Firebase user ID
+- **Response**: 
+  ```json
+  {
+    "transcript": "Transcribed text here"
+  }
+  ```
 
 ### POST /api/ask
 - **Description**: Send a prompt to the AI and get a response
@@ -97,14 +116,22 @@ npm start
 - Token validation for API requests
 - User-specific token tracking
 - Firestore security rules integration
+- Automatic cleanup of uploaded audio files
 
 ## Token System
 
 - **Free Users**: Unlimited usage (no token deduction)
 - **Pro Users**: Limited tokens, tracked per API call
+  - Transcription: 2 tokens per request
+  - AI Chat: 8 tokens per request
 - **Premium Users**: Unlimited usage (no token deduction)
 
-Each AI interaction costs 10 tokens for Pro users.
+## Audio Processing
+
+- Supports various audio formats (WebM, MP3, WAV, M4A)
+- Maximum file size: 25MB
+- Optimized for Bengali language recognition
+- Automatic file cleanup after processing
 
 ## Deployment
 
@@ -132,6 +159,8 @@ The API includes comprehensive error handling for:
 - Token exhaustion
 - Firebase connectivity issues
 - OpenAI API errors
+- Audio processing errors
+- File upload errors
 
 ## Monitoring
 
@@ -139,7 +168,16 @@ The API includes comprehensive error handling for:
 - Error tracking
 - Token usage analytics
 - User interaction history stored in Firestore
+- Transcription logs for debugging
 
 ## Support
 
 For issues and support, please check the Firebase Console logs and server console output for detailed error information.
+
+## Requirements
+
+- Node.js 16+
+- OpenAI API key with GPT-4 and Whisper access
+- Firebase project with Firestore enabled
+- Sufficient disk space for temporary audio file processing
+```
