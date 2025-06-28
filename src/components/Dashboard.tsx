@@ -1,7 +1,8 @@
+
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { Mic, ScreenShare, CreditCard } from 'lucide-react';
@@ -31,7 +32,7 @@ export const Dashboard = () => {
   const navigate = useNavigate();
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [currentStatus, setCurrentStatus] = useState('স্ক্রিন শেয়ার করে শুরু করুন');
+  const [currentStatus, setCurrentStatus] = useState('স্ক্রিন শেয়ার করুন এবং বাংলায় কথা বলুন');
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -51,7 +52,7 @@ export const Dashboard = () => {
   const getTokenDisplay = () => {
     if (!userData) return '0';
     if (userData.subscription === 'premium') return '∞';
-    if (userData.subscription === 'free') return '∞'; // Free users have unlimited usage
+    if (userData.subscription === 'free') return '∞';
     return `${userData.tokens - userData.usedTokens}`;
   };
 
@@ -147,12 +148,15 @@ export const Dashboard = () => {
         const transcript = event.results[event.results.length - 1][0].transcript;
         setCurrentStatus(`আপনি বললেন: ${transcript}`);
 
-        // Call AI API (placeholder - users need to implement their backend)
+        // Call AI API
         try {
           const response = await fetch('/api/ask', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: transcript }),
+            body: JSON.stringify({ 
+              prompt: transcript,
+              userId: user?.uid 
+            }),
           });
 
           if (response.ok) {
@@ -163,9 +167,15 @@ export const Dashboard = () => {
 
             // Bengali text-to-speech
             const utterance = new SpeechSynthesisUtterance(reply);
-            utterance.lang = 'bn-BD';
+            const isBangla = /[\u0980-\u09FF]/.test(reply);
+            utterance.lang = isBangla ? 'bn-BD' : 'en-US';
             utterance.rate = 0.8;
             speechSynthesis.speak(utterance);
+
+            // Update tokens for paid users
+            if (userData?.subscription !== 'free' && userData?.subscription !== 'premium') {
+              await updateTokens(10);
+            }
           } else {
             setCurrentStatus('AI সার্ভিস অনুপলব্ধ - ব্যাকএন্ড সেটআপ করুন');
           }
@@ -209,12 +219,27 @@ export const Dashboard = () => {
   }, [mediaStream]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-red-950 to-black">
-      {/* Animated Background */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-red-500/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-red-600/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-red-400/5 rounded-full blur-3xl animate-pulse delay-500"></div>
+    <div className="min-h-screen bg-black relative overflow-x-hidden">
+      {/* Modern AI Background */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        {/* Animated gradient background */}
+        <div className="absolute inset-0 bg-gradient-to-45 from-black via-red-950/20 to-red-900/10 animate-gradient-shift"></div>
+        
+        {/* AI Neural network style blobs */}
+        <div className="absolute -top-40 -left-60 w-[500px] h-[500px] bg-gradient-radial from-red-500/20 via-red-600/10 to-transparent rounded-full blur-3xl animate-float1"></div>
+        <div className="absolute -bottom-40 -right-60 w-[400px] h-[400px] bg-gradient-radial from-red-700/20 via-red-800/10 to-transparent rounded-full blur-3xl animate-float2"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-gradient-radial from-red-400/15 via-red-500/5 to-transparent rounded-full blur-3xl animate-float3"></div>
+
+        {/* AI Particles */}
+        <div className="absolute w-1 h-1 bg-red-500/80 rounded-full top-1/5 left-1/10 animate-particle-move"></div>
+        <div className="absolute w-1 h-1 bg-red-500/80 rounded-full top-3/5 left-4/5 animate-particle-move delay-2000"></div>
+        <div className="absolute w-1 h-1 bg-red-500/80 rounded-full top-4/5 left-3/10 animate-particle-move delay-4000"></div>
+        <div className="absolute w-1 h-1 bg-red-500/80 rounded-full top-3/10 left-7/10 animate-particle-move delay-6000"></div>
+
+        {/* Neural Network Lines */}
+        <div className="absolute top-1/4 left-3/20 w-[200px] h-px bg-gradient-to-r from-transparent via-red-500/30 to-transparent rotate-45 animate-neural-pulse"></div>
+        <div className="absolute top-3/5 right-1/5 w-[150px] h-px bg-gradient-to-r from-transparent via-red-500/30 to-transparent -rotate-30 animate-neural-pulse delay-1000"></div>
+        <div className="absolute bottom-3/10 left-2/5 w-[100px] h-px bg-gradient-to-r from-transparent via-red-500/30 to-transparent rotate-20 animate-neural-pulse delay-2000"></div>
       </div>
 
       {/* Header */}
@@ -223,22 +248,23 @@ export const Dashboard = () => {
           <h1 className="text-3xl font-bold text-white">
             <span className="text-red-500">Killer</span> Assistant
           </h1>
-          <p className="text-gray-300 mt-1">আপনার AI স্ক্রিন সহায়ক</p>
         </div>
 
         <div className="flex items-center gap-4">
-          <Card className="bg-black/40 border-red-500/30">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-white">👤 {userData?.displayName}</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="flex items-center gap-2">
-                <Badge className={`${getSubscriptionColor(userData?.subscription || 'free')} text-white`}>
-                  {userData?.subscription?.toUpperCase()}
-                </Badge>
-                <span className="text-white text-sm">
-                  🔢 {getTokenDisplay()} টোকেন
-                </span>
+          <Card className="bg-black/40 border-red-500/30 backdrop-blur-md">
+            <CardContent className="p-3">
+              <div className="flex items-center gap-3">
+                <div className="text-white text-sm">
+                  <div className="font-medium">{userData?.displayName}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge className={`${getSubscriptionColor(userData?.subscription || 'free')} text-white text-xs`}>
+                      {userData?.subscription?.toUpperCase()}
+                    </Badge>
+                    <span className="text-xs">
+                      🔢 {getTokenDisplay()} টোকেন
+                    </span>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -264,7 +290,7 @@ export const Dashboard = () => {
       {/* Main Content */}
       <div className="relative z-10 flex flex-col items-center justify-center min-h-[80vh] p-6">
         <div className="text-center mb-8">
-          <h2 className="text-4xl md:text-6xl font-bold text-white mb-4">
+          <h2 className="text-4xl md:text-6xl font-bold text-white mb-4 leading-tight">
             Share Your Screen And <span className="text-red-500">Solve</span> Anything
           </h2>
           <p className="text-xl text-gray-300 max-w-2xl mx-auto">
@@ -274,7 +300,7 @@ export const Dashboard = () => {
 
         {/* Video Display */}
         {isScreenSharing && (
-          <Card className="mb-8 bg-black/40 border-red-500/30 backdrop-blur-xl">
+          <Card className="mb-8 bg-black/40 border-red-500/30 backdrop-blur-xl transition-all duration-600">
             <CardContent className="p-4">
               <div className="relative">
                 <Badge className="absolute top-2 right-2 bg-red-600 text-white z-10">
@@ -296,20 +322,20 @@ export const Dashboard = () => {
         <Button
           onClick={isScreenSharing ? stopScreenShare : startScreenShare}
           disabled={!canUseTokens}
-          className={`text-xl px-8 py-6 mb-8 ${
+          className={`text-xl px-8 py-6 mb-8 transition-all duration-300 ${
             isScreenSharing 
               ? 'bg-red-600 hover:bg-red-700' 
-              : 'bg-blue-600 hover:bg-blue-700'
+              : 'bg-red-600 hover:bg-red-700'
           } ${!canUseTokens ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           <ScreenShare className="w-6 h-6 mr-3" />
-          {isScreenSharing ? 'স্ক্রিন শেয়ার বন্ধ করুন' : 'স্ক্রিন শেয়ার শুরু করুন'}
+          {isScreenSharing ? 'Stop Sharing' : 'Share Your Screen'}
         </Button>
 
         {/* Status Indicators */}
-        <div className="flex gap-8 mb-8">
+        <div className="flex gap-12 mb-12">
           <div className="flex flex-col items-center">
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 ${
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 transition-all duration-300 ${
               isScreenSharing ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'
             }`}>
               <ScreenShare className="w-6 h-6" />
@@ -318,7 +344,7 @@ export const Dashboard = () => {
           </div>
           
           <div className="flex flex-col items-center">
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 ${
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 transition-all duration-300 ${
               isListening 
                 ? 'bg-blue-500/20 text-blue-400 animate-pulse' 
                 : 'bg-gray-500/20 text-gray-400'
@@ -327,6 +353,13 @@ export const Dashboard = () => {
             </div>
             <span className="text-sm text-gray-300">Voice Assistant</span>
           </div>
+        </div>
+
+        {/* Instructions */}
+        <div className="max-w-2xl mb-12">
+          <p className="text-white/80 text-lg text-center leading-relaxed">
+            আপনার স্ক্রিন শেয়ার করুন এবং বাংলায় কথা বলুন। AI আপনার সমস্যার সমাধান দেবে।
+          </p>
         </div>
 
         {/* Status Display */}
