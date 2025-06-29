@@ -16,8 +16,8 @@ export const Dashboard = () => {
   const [currentStatus, setCurrentStatus] = useState('স্ক্রিন শেয়ার করুন এবং বাংলায় কথা বলুন');
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [isVideoReady, setIsVideoReady] = useState(false);
+  const [recordingInterval, setRecordingInterval] = useState<NodeJS.Timeout | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -50,7 +50,9 @@ export const Dashboard = () => {
     }
 
     try {
-      console.log('Starting screen share...');
+      console.log('🎬 Starting screen share...');
+      setCurrentStatus('🎬 স্ক্রিন শেয়ার শুরু করছি...');
+      
       const stream = await navigator.mediaDevices.getDisplayMedia({ 
         video: { 
           width: { ideal: 1920 },
@@ -59,7 +61,7 @@ export const Dashboard = () => {
         audio: true 
       });
       
-      console.log('Screen share stream obtained:', stream);
+      console.log('✅ Screen share stream obtained:', stream);
       setMediaStream(stream);
       setIsVideoReady(false);
       
@@ -69,15 +71,21 @@ export const Dashboard = () => {
         
         // Wait for metadata to load before playing
         videoRef.current.onloadedmetadata = async () => {
-          console.log('Video metadata loaded');
+          console.log('✅ Video metadata loaded');
+          setCurrentStatus('📹 ভিডিও লোড হচ্ছে...');
           try {
             if (videoRef.current) {
               await videoRef.current.play();
               setIsVideoReady(true);
-              console.log('Video started playing');
+              console.log('✅ Video started playing');
+              setCurrentStatus('✅ স্ক্রিন শেয়ার চালু - এখন কথা বলুন');
+              
+              // Start continuous voice recording
+              startContinuousRecording();
             }
           } catch (playError) {
-            console.error('Error playing video:', playError);
+            console.error('❌ Error playing video:', playError);
+            setCurrentStatus('❌ ভিডিও প্লে সমস্যা');
             toast({ 
               title: "ভিডিও প্লে সমস্যা", 
               description: "ভিডিও শুরু করতে সমস্যা হয়েছে",
@@ -88,13 +96,13 @@ export const Dashboard = () => {
 
         // Handle video errors
         videoRef.current.onerror = (error) => {
-          console.error('Video element error:', error);
+          console.error('❌ Video element error:', error);
           setIsVideoReady(false);
+          setCurrentStatus('❌ ভিডিও এরর');
         };
       }
 
       setIsScreenSharing(true);
-      setCurrentStatus('✅ স্ক্রিন শেয়ার চালু - এখন কথা বলুন');
 
       // Update tokens for paid users only
       if (userData?.subscription !== 'free' && userData?.subscription !== 'premium') {
@@ -105,34 +113,47 @@ export const Dashboard = () => {
         });
       }
 
-      // Start voice recording with Whisper
-      startWhisperRecording();
-
       // Handle stream end
       stream.getVideoTracks()[0].onended = () => {
-        console.log('Screen share ended by user');
+        console.log('🛑 Screen share ended by user');
         stopScreenShare();
       };
 
       toast({ title: "স্ক্রিন শেয়ার শুরু!", description: "এখন বাংলায় আপনার সমস্যা বলুন" });
     } catch (error) {
-      console.error('Screen share error:', error);
+      console.error('❌ Screen share error:', error);
+      let errorMessage = 'স্ক্রিন শেয়ার ব্যর্থ - আবার চেষ্টা করুন';
+      
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          errorMessage = 'স্ক্রিন শেয়ার অনুমতি দিন';
+        } else if (error.name === 'NotFoundError') {
+          errorMessage = 'কোন স্ক্রিন পাওয়া যায়নি';
+        }
+      }
+      
+      setCurrentStatus(`❌ ${errorMessage}`);
       toast({ 
         title: "স্ক্রিন শেয়ার ব্যর্থ", 
-        description: `আবার চেষ্টা করুন: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        description: errorMessage,
         variant: "destructive" 
       });
-      setCurrentStatus('স্ক্রিন শেয়ার ব্যর্থ - আবার চেষ্টা করুন');
     }
   };
 
   const stopScreenShare = () => {
-    console.log('Stopping screen share...');
+    console.log('🛑 Stopping screen share...');
+    
+    // Clear recording interval
+    if (recordingInterval) {
+      clearInterval(recordingInterval);
+      setRecordingInterval(null);
+    }
     
     if (mediaStream) {
       mediaStream.getTracks().forEach(track => {
         track.stop();
-        console.log('Stopped track:', track.kind);
+        console.log('🛑 Stopped track:', track.kind);
       });
       setMediaStream(null);
     }
@@ -144,20 +165,37 @@ export const Dashboard = () => {
 
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
-      console.log('Stopped media recorder');
+      console.log('🛑 Stopped media recorder');
     }
 
     setIsScreenSharing(false);
     setIsListening(false);
     setCurrentStatus('স্ক্রিন শেয়ার বন্ধ হয়েছে');
-    setAudioChunks([]);
+    setMediaRecorder(null);
     
     toast({ title: "স্ক্রিন শেয়ার বন্ধ" });
   };
 
-  const startWhisperRecording = async () => {
+  const startContinuousRecording = () => {
+    console.log('🎤 Starting continuous recording every 5 seconds...');
+    
+    // Start first recording immediately
+    startSingleRecording();
+    
+    // Set up interval for continuous recording
+    const interval = setInterval(() => {
+      if (isScreenSharing) {
+        startSingleRecording();
+      }
+    }, 5000);
+    
+    setRecordingInterval(interval);
+  };
+
+  const startSingleRecording = async () => {
     try {
-      console.log('Starting Whisper recording...');
+      console.log('🎤 Starting single voice recording...');
+      setCurrentStatus('🎤 শুনছি... আপনার সমস্যা বলুন');
       
       // Request microphone permission explicitly
       const audioStream = await navigator.mediaDevices.getUserMedia({ 
@@ -170,7 +208,7 @@ export const Dashboard = () => {
         } 
       });
       
-      console.log('Audio stream obtained:', audioStream);
+      console.log('✅ Audio stream obtained');
       
       // Check if MediaRecorder supports the desired format
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
@@ -179,128 +217,144 @@ export const Dashboard = () => {
         ? 'audio/webm' 
         : 'audio/wav';
       
-      console.log('Using MIME type:', mimeType);
+      console.log('🎵 Using MIME type:', mimeType);
       
       const recorder = new MediaRecorder(audioStream, { mimeType });
-      
       const chunks: Blob[] = [];
       
       recorder.ondataavailable = (event) => {
-        console.log('Audio data available:', event.data.size, 'bytes');
+        console.log('📊 Audio data available:', event.data.size, 'bytes');
         if (event.data.size > 0) {
           chunks.push(event.data);
         }
       };
 
       recorder.onstop = async () => {
-        console.log('Recorder stopped, processing audio...');
+        console.log('🛑 Single recorder stopped, processing audio...');
+        
+        // Stop the audio stream
+        audioStream.getTracks().forEach(track => track.stop());
+        
         if (chunks.length > 0) {
           const audioBlob = new Blob(chunks, { type: mimeType });
-          console.log('Audio blob created:', audioBlob.size, 'bytes');
-          await processAudioWithWhisper(audioBlob);
+          console.log('📦 Audio blob created:', audioBlob.size, 'bytes');
+          
+          if (audioBlob.size > 1000) { // Only process if there's substantial audio
+            await processAudioWithWhisper(audioBlob);
+          } else {
+            console.log('📦 Audio too small, skipping...');
+            setCurrentStatus('🎤 কোন কথা শোনা যায়নি - আবার বলুন');
+          }
         } else {
-          console.log('No audio chunks to process');
-          setCurrentStatus('🎤 কোন অডিও পাওয়া যায়নি - আবার বলুন');
-        }
-        chunks.length = 0;
-        
-        // Restart recording if still screen sharing
-        if (isScreenSharing) {
-          setTimeout(() => startWhisperRecording(), 1000);
+          console.log('📦 No audio chunks to process');
+          setCurrentStatus('🎤 কোন অডিও পাওয়া যায়নি');
         }
       };
 
       recorder.onstart = () => {
-        console.log('Recorder started');
+        console.log('✅ Single recorder started');
         setIsListening(true);
-        setCurrentStatus('🎤 শুনছি... আপনার সমস্যা বলুন');
       };
 
       recorder.onerror = (event) => {
-        console.error('Recorder error:', event);
-        setCurrentStatus('🎤 অডিও রেকর্ডিং সমস্যা');
+        console.error('❌ Single recorder error:', event);
+        setCurrentStatus('❌ অডিও রেকর্ডিং সমস্যা');
+        audioStream.getTracks().forEach(track => track.stop());
       };
 
       setMediaRecorder(recorder);
       recorder.start();
       
-      // Record in 5-second chunks for better real-time processing
+      // Record for 4 seconds (leaving 1 second gap for processing)
       setTimeout(() => {
         if (recorder.state === 'recording') {
-          console.log('Stopping recorder after 5 seconds');
+          console.log('⏰ Stopping recorder after 4 seconds');
           recorder.stop();
+          setIsListening(false);
         }
-      }, 5000);
+      }, 4000);
 
     } catch (error) {
-      console.error('Audio recording error:', error);
+      console.error('❌ Audio recording error:', error);
+      
+      let errorMessage = 'মাইক্রোফোন অনুমতি দিন এবং আবার চেষ্টা করুন';
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          errorMessage = 'মাইক্রোফোন অনুমতি দিন';
+        } else if (error.name === 'NotFoundError') {
+          errorMessage = 'মাইক্রোফোন পাওয়া যায়নি';
+        }
+      }
+      
       toast({ 
         title: "অডিও রেকর্ডিং ব্যর্থ", 
-        description: "মাইক্রোফোন অনুমতি দিন এবং আবার চেষ্টা করুন",
+        description: errorMessage,
         variant: "destructive" 
       });
-      setCurrentStatus('🎤 মাইক্রোফোন অ্যাক্সেস প্রয়োজন');
+      setCurrentStatus(`❌ ${errorMessage}`);
     }
   };
 
   const processAudioWithWhisper = async (audioBlob: Blob) => {
     try {
-      console.log('Processing audio with Whisper...');
-      setCurrentStatus('🤖 AI প্রসেসিং...');
+      console.log('🤖 Processing audio with Whisper...');
+      setCurrentStatus('🤖 AI শুনছে... অপেক্ষা করুন');
 
       // Convert audio to the format expected by Whisper
       const formData = new FormData();
       formData.append('audio', audioBlob, 'audio.webm');
       formData.append('userId', user?.uid || '');
 
-      console.log('Sending request to /api/transcribe');
+      console.log('📤 Sending request to /api/transcribe');
       
       const response = await fetch('/api/transcribe', {
         method: 'POST',
         body: formData,
       });
 
-      console.log('Transcribe response status:', response.status);
+      console.log('📥 Transcribe response status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
         const transcript = data.transcript;
-        console.log('Transcript received:', transcript);
+        console.log('✅ Transcript received:', transcript);
         
         if (transcript && transcript.trim()) {
-          setCurrentStatus(`আপনি বললেন: ${transcript}`);
+          setCurrentStatus(`📝 আপনি বললেন: "${transcript}"`);
           
           // Call AI for response
           await getAIResponse(transcript);
         } else {
-          console.log('Empty transcript received');
+          console.log('📝 Empty transcript received');
           setCurrentStatus('🎤 কোন কথা শোনা যায়নি - আবার বলুন');
         }
       } else {
         const errorText = await response.text();
-        console.error('Transcribe error:', response.status, errorText);
+        console.error('❌ Transcribe error:', response.status, errorText);
         
         if (response.status === 404) {
           setCurrentStatus('❌ ব্যাকএন্ড সার্ভার চালু নেই - localhost:3000 এ সার্ভার চালান');
+        } else if (response.status === 429) {
+          setCurrentStatus('❌ টোকেন শেষ - সাবস্ক্রিপশন আপগ্রেড করুন');
         } else {
-          setCurrentStatus(`ভয়েস প্রসেসিং সমস্যা (${response.status})`);
+          setCurrentStatus(`❌ ভয়েস প্রসেসিং সমস্যা (${response.status})`);
         }
       }
     } catch (error) {
-      console.error('Whisper processing error:', error);
+      console.error('❌ Whisper processing error:', error);
       
       if (error instanceof TypeError && error.message.includes('fetch')) {
         setCurrentStatus('❌ নেটওয়ার্ক সংযোগ সমস্যা - ব্যাকএন্ড সার্ভার চেক করুন');
       } else {
-        setCurrentStatus('ভয়েস সার্ভিস সংযোগ ব্যর্থ');
+        setCurrentStatus('❌ ভয়েস সার্ভিস সংযোগ ব্যর্থ');
       }
     }
   };
 
   const getAIResponse = async (transcript: string) => {
     try {
-      console.log('Getting AI response for:', transcript);
-      setCurrentStatus('🧠 AI চিন্তা করছে...');
+      console.log('🧠 Getting AI response for:', transcript);
+      setCurrentStatus('🧠 AI চিন্তা করছে... অপেক্ষা করুন');
 
       const response = await fetch('/api/ask', {
         method: 'POST',
@@ -311,30 +365,44 @@ export const Dashboard = () => {
         }),
       });
 
-      console.log('AI response status:', response.status);
+      console.log('📥 AI response status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
         const reply = data.reply;
-        console.log('AI reply received:', reply);
+        console.log('✅ AI reply received:', reply);
         
-        setCurrentStatus(`💡 AI সমাধান: ${reply}`);
+        setCurrentStatus(`💡 AI সমাধান: "${reply}"`);
 
         // Bengali text-to-speech with better error handling
         try {
+          console.log('🔊 Starting text-to-speech...');
+          setCurrentStatus(`🔊 AI বলছে: "${reply}"`);
+          
           const utterance = new SpeechSynthesisUtterance(reply);
           const isBangla = /[\u0980-\u09FF]/.test(reply);
           utterance.lang = isBangla ? 'bn-BD' : 'en-US';
           utterance.rate = 0.8;
           utterance.volume = 0.8;
           
+          utterance.onstart = () => {
+            console.log('✅ Text-to-speech started');
+          };
+          
+          utterance.onend = () => {
+            console.log('✅ Text-to-speech completed');
+            setCurrentStatus('✅ সমাধান সম্পূর্ণ - নতুন প্রশ্ন বলুন');
+          };
+          
           utterance.onerror = (event) => {
-            console.error('Speech synthesis error:', event);
+            console.error('❌ Speech synthesis error:', event);
+            setCurrentStatus('❌ কণ্ঠস্বর সমস্যা - টেক্সট পড়ুন');
           };
           
           speechSynthesis.speak(utterance);
         } catch (speechError) {
-          console.error('Text-to-speech error:', speechError);
+          console.error('❌ Text-to-speech error:', speechError);
+          setCurrentStatus('❌ কণ্ঠস্বর সেবা অনুপলব্ধ');
         }
 
         // Update tokens for paid users
@@ -343,30 +411,35 @@ export const Dashboard = () => {
         }
       } else {
         const errorText = await response.text();
-        console.error('AI response error:', response.status, errorText);
+        console.error('❌ AI response error:', response.status, errorText);
         
         if (response.status === 404) {
           setCurrentStatus('❌ ব্যাকএন্ড AI সার্ভার চালু নেই');
         } else if (response.status === 401) {
           setCurrentStatus('❌ OpenAI API Key সেটআপ করুন');
+        } else if (response.status === 429) {
+          setCurrentStatus('❌ টোকেন শেষ - সাবস্ক্রিপশন আপগ্রেড করুন');
         } else {
-          setCurrentStatus(`AI সার্ভিস সমস্যা (${response.status})`);
+          setCurrentStatus(`❌ AI সার্ভিস সমস্যা (${response.status})`);
         }
       }
     } catch (error) {
-      console.error('AI API Error:', error);
+      console.error('❌ AI API Error:', error);
       
       if (error instanceof TypeError && error.message.includes('fetch')) {
         setCurrentStatus('❌ AI সার্ভার সংযোগ ব্যর্থ - নেটওয়ার্ক চেক করুন');
       } else {
-        setCurrentStatus('AI সার্ভিস সংযোগ ব্যর্থ');
+        setCurrentStatus('❌ AI সার্ভিস সংযোগ ব্যর্থ');
       }
     }
   };
 
   useEffect(() => {
     return () => {
-      console.log('Dashboard cleanup...');
+      console.log('🧹 Dashboard cleanup...');
+      if (recordingInterval) {
+        clearInterval(recordingInterval);
+      }
       if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
       }
@@ -374,7 +447,7 @@ export const Dashboard = () => {
         mediaRecorder.stop();
       }
     };
-  }, [mediaStream, mediaRecorder]);
+  }, [mediaStream, mediaRecorder, recordingInterval]);
 
   return (
     <div className="min-h-screen bg-black relative overflow-x-hidden">
